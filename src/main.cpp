@@ -274,7 +274,7 @@ int generate(QString configfile, QString transfile)
             xmlout.writeCharacters(c->messages.at(i));
             xmlout.writeEndElement();
             xmlout.writeStartElement("translation");
-            xmlout.writeCharacters("Translated");
+            xmlout.writeCharacters("T" + c->messages.at(i));
             xmlout.writeEndElement();
             xmlout.writeEndElement();
         }
