@@ -26,6 +26,8 @@
 #include <QDomElement>
 #include <QXmlStreamWriter>
 #include <QtDebug>
+#include <QHash>
+#include <QHashIterator>
 
 struct Context
 {
@@ -36,9 +38,35 @@ struct Context
     QString reportDirectory;
 };
 
+struct Locations
+{
+    QStringList filenames;
+    QStringList linenumbers;
+};
+
+QHash<QString, Locations*> globalContext;
+
+void addMessage(QString source, QString file, int line);
 Context* buildContext(QString filename, QString basedir);
 int generate(QString configfile, QString transfile);
 int main(int argc, char **argv);
+
+// Add a message to the context.
+void addMessage(QString source, QString file, int line)
+{
+    Locations *location;
+    if(globalContext.contains(source))
+    {
+        location = globalContext.value(source);
+    }
+    else
+    {
+        location = new Locations;
+    }
+    location->filenames.append(file);
+    location->linenumbers.append(QString("%1").arg(line));
+    globalContext.insert(source, location);
+}
 
 // Create a Context* with messages from a file.
 Context* buildContext(QString filename, QString basedir)
@@ -58,25 +86,22 @@ Context* buildContext(QString filename, QString basedir)
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.attribute("name"));
+            addMessage(currentElement.attribute("name"), filename, currentNode.lineNumber());
         }
         currentSet = document.elementsByTagName("reporttitle");
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.text());
+            addMessage(currentElement.text(), filename, currentNode.lineNumber());
         }
         currentSet = document.elementsByTagName("menu");
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.attribute("name"));
+            addMessage(currentElement.attribute("name"), filename, currentNode.lineNumber());
             if(currentElement.attribute("type") == "reports")
             {
                 context->reportDirectory = currentElement.attribute("src");
@@ -86,25 +111,22 @@ Context* buildContext(QString filename, QString basedir)
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.text());
+            addMessage(currentElement.text(), filename, currentNode.lineNumber());
         }
         currentSet = document.elementsByTagName("label");
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.text());
+            addMessage(currentElement.text(), filename, currentNode.lineNumber());
         }
         currentSet = document.elementsByTagName("decoration");
         for(int i = 0; i < currentSet.length(); i++)
         {
             currentNode = currentSet.at(i);
-            context->locations.append(QString("%1").arg(currentNode.lineNumber()));
             currentElement = currentNode.toElement();
-            context->messages.append(currentElement.attribute("name"));
+            addMessage(currentElement.attribute("name"), filename, currentNode.lineNumber());
         }
         currentSet = document.elementsByTagName("spinbox");
         for(int i = 0; i < currentSet.length(); i++)
@@ -113,13 +135,11 @@ Context* buildContext(QString filename, QString basedir)
             currentElement = currentNode.toElement();
             if(currentElement.hasAttribute("pretext"))
             {
-                context->locations.append(QString("%1").arg(currentNode.lineNumber()));
-                context->messages.append(currentElement.attribute("pretext"));
+                addMessage(currentElement.attribute("pretext"), filename, currentNode.lineNumber());
             }
             if(currentElement.hasAttribute("posttext"))
             {
-                context->locations.append(QString("%1").arg(currentNode.lineNumber()));
-                context->messages.append(currentElement.attribute("posttext"));
+                addMessage(currentElement.attribute("posttext"), filename, currentNode.lineNumber());
             }
         }
         currentSet = document.elementsByTagName("measurementtable");
@@ -137,8 +157,7 @@ Context* buildContext(QString filename, QString basedir)
                         QDomElement childElement = childNode.toElement();
                         if(childElement.tagName() == "column")
                         {
-                            context->locations.append(QString("%1").arg(childNode.lineNumber()));
-                            context->messages.append(childElement.text());
+                            addMessage(childElement.text(), filename, childNode.lineNumber());
                         }
                     }
                 }
@@ -159,8 +178,7 @@ Context* buildContext(QString filename, QString basedir)
                         QDomElement childElement = childNode.toElement();
                         if(childElement.tagName() == "column")
                         {
-                            context->locations.append(QString("%1").arg(childNode.lineNumber()));
-                            context->messages.append(childElement.attribute("name"));
+                            addMessage(childElement.attribute("name"), filename, childNode.lineNumber());
                         }
                     }
                 }
@@ -178,13 +196,12 @@ Context* buildContext(QString filename, QString basedir)
                 if(scriptLines.at(j).contains("TTR"))
                 {
                     QString currentLine = scriptLines.at(j);
-                    context->locations.append(QString("%1").arg(currentNode.lineNumber() + j + 1));
                     currentLine = currentLine.remove(0, currentLine.indexOf("TTR"));
                     currentLine = currentLine.remove(0, currentLine.indexOf("\"")+1);
                     currentLine = currentLine.remove(0, currentLine.indexOf("\"")+1);
                     currentLine = currentLine.remove(0, currentLine.indexOf("\"")+1);
                     currentLine = currentLine.remove(currentLine.indexOf("\""), currentLine.length());
-                    context->messages.append(currentLine);
+                    addMessage(currentLine, filename, currentNode.lineNumber() + j + 1);
                 }
             }
         }
@@ -257,29 +274,31 @@ int generate(QString configfile, QString transfile)
     xmlout.writeDTD("<!DOCTYPE TS>");
     xmlout.writeStartElement("TS");
     xmlout.writeAttribute("version", "2.0");
-    foreach(Context *c, contexts)
+    QHashIterator<QString, Locations*> i(globalContext);
+    xmlout.writeStartElement("context");
+    xmlout.writeStartElement("name");
+    xmlout.writeCharacters("configuration");
+    xmlout.writeEndElement();
+    while(i.hasNext())
     {
-        xmlout.writeStartElement("context");
-        xmlout.writeStartElement("name");
-        xmlout.writeCharacters(c->name);
+        i.next();
+        xmlout.writeStartElement("message");
+        xmlout.writeStartElement("source");
+        xmlout.writeCharacters(i.key());
         xmlout.writeEndElement();
-        for(int i = 0; i < c->messages.length(); i++)
+        for(int j = 0; j < i.value()->filenames.length(); j++)
         {
-            xmlout.writeStartElement("message");
             xmlout.writeStartElement("location");
-            xmlout.writeAttribute("filename", c->filename);
-            xmlout.writeAttribute("line", c->locations.at(i));
-            xmlout.writeEndElement();
-            xmlout.writeStartElement("source");
-            xmlout.writeCharacters(c->messages.at(i));
-            xmlout.writeEndElement();
-            xmlout.writeStartElement("translation");
-            xmlout.writeCharacters("T" + c->messages.at(i));
-            xmlout.writeEndElement();
+            xmlout.writeAttribute("filename", i.value()->filenames.at(j));
+            xmlout.writeAttribute("line", i.value()->linenumbers.at(j));
             xmlout.writeEndElement();
         }
+        xmlout.writeStartElement("translation");
+        xmlout.writeCharacters("T" + i.key());
+        xmlout.writeEndElement();
         xmlout.writeEndElement();
     }
+    xmlout.writeEndElement();
     xmlout.writeEndElement();
     xmlout.writeEndDocument();
     ts.close();
