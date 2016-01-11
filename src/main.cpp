@@ -293,9 +293,12 @@ int generate(QString configfile, QString transfile)
             xmlout.writeAttribute("line", i.value()->linenumbers.at(j));
             xmlout.writeEndElement();
         }
+        // Uncomment to produce placeholder translations.
+        /*
         xmlout.writeStartElement("translation");
         xmlout.writeCharacters("T" + i.key());
         xmlout.writeEndElement();
+        */
         xmlout.writeEndElement();
     }
     xmlout.writeEndElement();
